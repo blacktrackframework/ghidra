@@ -15,7 +15,7 @@
 > Ghidra's handling of ISA extensions can be informed by the way other systems handle those instructions.
 
 The RISCV-64 `libc.so.6` library explicitly describes the required processor extensions with the `Tag_RISCV_arch` Elf file attribute.
-For the upcoming GCC 15 release the extension list looks like this:
+For the GCC 15 release the extension list looks like this:
 
 ```console
 readelf -a sysroot/lib/libc.so.6|grep Tag_RISCV_arch
@@ -45,7 +45,7 @@ and https://five-embeddev.com/riscv-isa-manual/latest/zifencei.html#.
 
 For a broader summary of RISCV extensions, and how the kernel identifies available extensions, see https://research.redhat.com/blog/article/risc-v-extensions-whats-available-and-how-to-find-it.
 
-In general, ISA extensions not fully ratified are prefixed with `z`, while vendor-specific extensions are prefixed with `x`.
+Most ISA extensions are prefixed with `z`, while vendor-specific extensions are prefixed with `x`.
 The `z` extensions generally have non-conflicting opcode encodings.  Vendor-specific `x` extensions *may* have overlapping
 encodings.
 
@@ -54,7 +54,7 @@ A RISCV kernel goes into more detail on supported extensions with strings like:
 
 It is *not* obvious whether these extensions are required, supported, or simply recognized by this kernel.
 
-This extension list includes `zbb1p0`, referencing the zbb version 1.0 bit processing extension.
+This extension list includes `zbb1p0`, referencing the `zbb` version 1.0 bit processing extension.
 If this extension is found on the processor at boot time, it likely invokes the Linux kernel `ALTERNATE` macro
 to modify the `strcmp` kernel function to silently invoke `strcmp_zbb` instead.
 
@@ -72,7 +72,7 @@ We can compare Ghidra's ISA extension processing with that of `binutils`, since 
 performs roughly the same function as Ghidra's importer and disassembler.  If `gas` can assemble the instructions and `objdump` can read them,
 then we have a decent conformance and test suite for Ghidra.
 
-The source repository for `binutils` is https://sourceware.org/git/binutils-gdb.git, currently at release 2.43.  Within that repository the
+The source repository for `binutils` is https://sourceware.org/git/binutils-gdb.git, currently at release 2.44.  Within that repository the
 current set of RISCV instruction encodings tested is found in `gas/testsuite/gas/riscv`.  Not all RISCV instruction extensions are found there - only those someone has
 thought likely to be useful in the near future.
 
@@ -85,18 +85,20 @@ Binutils provides selected vendor-specific extensions, currently including:
 * `x-thead` extensions from [Alibaba's](https://www.scmp.com/tech/big-tech/article/3212122/alibabas-chip-unit-t-head-steps-risc-v-development-china-pushes-open-source-architecture-face-us) cpu development initiative 
 * `x-ventana` extensions from Ventana
 * `xsfvcp` extensions from SI-Five
+* `xcv` extensions from the [open hardware group](https://docs.openhwgroup.org/projects/cv32e40p-user-manual/en/latest/instruction_set_extensions.html)
 
 Extension instructions can appear in deployed code without being supported by `binutils`.  This is especially true for kernel code, as vendors can use kernel macros to assemble highly
-specialized instructions needed for VM memory fencing and cache coherence.
+specialized instructions needed for VM memory fencing and cache coherence management.
 
-`objdump` for RISCV generally is built to handle all known extensions in its test suite - but these extensions must be manually enabled on the command line.
+`objdump` for RISCV generally is built to handle all known extensions in its test suite - but these extensions must be manually enabled on the command line or declared within
+the ELF binary.
 
 ### Ghidra's approach to RISCV extensions
 
 When Ghidra imports an ELF file it inspects `e_machine` and `e_flags` to find the *basic* RISCV variant.  The known variants are defined in `riscv.opinion`.
 A binary for a general purpose 64 bit RISCV processor with the G profile (I, M, A, and F extensions) and the C extension will get the `RV64GC` variant as the default 'language'.
 If the user enables languages other than the recommended language they will also see variants defined in `riscv.ldefs`.
-This includes `RV64GC` as well as `RV64GCV_THEAD`, where `RV64GCV_THEAD` includes the roughly 10 Alibaba THead extensions supported in the binutils gas testsuite.  
+This includes `RV64GC` as well as `RV64GCV_THEAD`, where `RV64GCV_THEAD` includes the roughly 10 Alibaba THead extensions supported in the `binutils` gas testsuite.  
 
 Each variant links to a (likely shared) `slaspec` file to include base and extension instructions for that variant.  These are short files that provide `@define` and `@include` statements to access
 specific files in this directory.  The general purpose 64 bit `RV64GC` variant uses the slaspec file (`riscv.lp64d.slaspec`) and includes three baseline `riscv.*.sinc` files and one place-holder `riscv.custom.sinc` file.
@@ -117,16 +119,18 @@ GCC can optimize generated code to use extension instructions, substituting chea
 This is easy for simple bit manipulation operations and harder for the vectorization of loops.
 
 The RISCV vector extension treatment by GCC is complex. Source code written explicitly for RISCV vector extensions uses *intrinsics* (see https://github.com/riscv-non-isa/rvv-intrinsic-doc).
-These intrinsic functions capture mode and execution vector instructions.  Because there are so many modes,types, and variants in vector contexts there can be upwards of 30,000 different vector intrinsics
+These intrinsic functions capture mode and execution vector instructions.  Because there are so many modes, types, and variants in vector contexts there can be upwards of 30,000 different vector intrinsics
 known to GCC.  That's too many to name explicitly in a C header file, so GCC precompiles these intrinsics directly into the riscv compiler.  Therefore `#include <riscv_vector.h>` does not itself define
 any of the vector intrinsic functions, so there is no immediate way Ghidra can import a C header file of all RISCV vector intrinsics.
 
 See https://github.com/ggerganov/whisper.cpp.git for an example of riscv vector instrinsic use, in the file `ggml_quants.c`.
 
+>Warning: Programs that use vector instrinsic functions directly can have hard-to-debug dependencies on vector register length, exception handling, and alignment.  
+
 ## Experimental approach to Ghidra support of RISCV instruction extensions
 
-* RISCV instruction extensions found in the main branch of the binutils gas testsuite should generally be recognized by Ghidra.  The immediate goal is to avoid the decompiler exiting early because it
-  encounters an unrecognized opcode.
+* RISCV instruction extensions found in the main branch of the binutils gas testsuite should generally be recognized by Ghidra.  The immediate goal is to avoid the disassembler or decompiler exiting early because they
+  encounter an unrecognized opcode.
 * The Ghidra default RISCV variants should track the current RISCV [profiles](https://github.com/riscv/riscv-profiles/blob/main/rva23-profile.adoc).  Currently, that means we should support 64 bit extensions
   included within the rva23 64 bit profile.
 * Where feasible, `binutils` and Ghidra should produce identical disassembly.  Exceptions include:
@@ -135,11 +139,11 @@ See https://github.com/ggerganov/whisper.cpp.git for an example of riscv vector 
 
 Deferred goals include:
 
-* 32 bit support of isa extensions
+* 32 bit semantics for isa extensions
 * isa extensions tuned for small RISCV microcontrollers
-* emulator support for user pcode operations
+* precise emulator support for user pcode operations
 * decompiler type inference from user pcode operations
-* 16 bit floating point support in the decompiler and emulator
+* precise 16 bit floating point support in the decompiler and emulator
 * exception handling due to alignment or floating point format errors
 
 ### Testing
