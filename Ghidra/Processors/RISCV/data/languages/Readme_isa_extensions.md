@@ -156,3 +156,29 @@ and `Ghidra/Features/Decompiler/src/decompile/datatests`.  The `unittests` direc
 tests to verify the supported RISCV processor/language definitions are loaded and key user pcode operations are defined.
 The `datatests` directory holds binary instruction snippets to be decompiled, along with key strings as they must
 appear in the decompiler view.
+
+Basic combinations of RISCV architecture, extensions, and generated code are listed below.
+
+
+| Language | Data Test | Architecture | Notes |
+| ------------------ | --------- | ---------- | ----- |
+| RISCV:LE:64:RV64GC | `riscv_isaext_memcpy` | rv64gcv | Minimal test of 64 bit vectorized memcpy |
+
+Pre-commit testing should include something like:
+
+```console
+$ cd Ghidra/Features/Decompiler/src/decompile/cpp
+$ make ghidra_test_dbg
+$ ./ghidra_test_dbg datatests riscv_isaext_memcpy.xml
+
+Success -- vsetvli
+Success -- vle8
+Success -- vse8
+
+Total tests applied = 3
+Total passing tests = 3
+```
+
+>TODO: The sleigh language `RISCV:LE:64:RV64GC` needs a better name, as it
+>      includes many standard-tracked extensions beyond those explicitly named
+>      by the `GC` suffix.

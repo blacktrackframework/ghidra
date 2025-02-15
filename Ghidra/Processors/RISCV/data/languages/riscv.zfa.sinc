@@ -786,6 +786,7 @@ define pcodeop fmax_m;
     frd=fmax_m(frs1S,frs2S);
 }
 
+@if ((FPSIZE == "64") || (FPSIZE == "128"))
 :fminm.d frd,frs1D,frs2D is frs1D & frd & frs2D & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x2 & funct7=0x15
 {
     frd=fmin_m(frs1D,frs2D);
@@ -795,6 +796,7 @@ define pcodeop fmax_m;
 {
     frd=fmax_m(frs1D,frs2D);
 }
+@endif
 
 :fminm.h frd,frs1S,frs2S is frs1S & frd & frs2S & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x2 & funct7=0x16
 {
@@ -806,6 +808,7 @@ define pcodeop fmax_m;
     frd=fmax_m(frs1S,frs2S);
 }
 
+@if (FPSIZE == "128")
 :fminm.q frd,frs1D,frs2D is frs1D & frd & frs2D & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x2 & funct7=0x17
 {
     frd=fmin_m(frs1D,frs2D);
@@ -815,22 +818,24 @@ define pcodeop fmax_m;
 {
     frd=fmax_m(frs1D,frs2D);
 }
+@endif
 
 # rounding
 
-:fround.s frd,frs1D,FRM is frs1D & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x20 & op2024=0x4
+:fround.s frd,frs1S,FRM is frs1S & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x20 & op2024=0x4
 {
-    local tmp:4 = float2float(frs1D);
+    local tmp:4 = float2float(frs1S);
     frd = zext(tmp);
 }
 
-:froundnx.s frd,frs1D,FRM is frs1D & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x20 & op2024=0x5
+:froundnx.s frd,frs1S,FRM is frs1S & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x20 & op2024=0x5
 {
     # sets the inexact exception flag if the input differs from the rounded result and is not NaN
-    local tmp:4 = float2float(frs1D);
+    local tmp:4 = float2float(frs1S);
     frd = zext(tmp);
 }
 
+@if ((FPSIZE == "64") || (FPSIZE == "128"))
 :fround.d frd,frs1D,FRM is frs1D & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x21 & op2024=0x4
 {
     local tmp:4 = float2float(frs1D);
@@ -843,20 +848,22 @@ define pcodeop fmax_m;
     local tmp:4 = float2float(frs1D);
     frd = zext(tmp);
 }
+@endif
 
-:fround.h frd,frs1D,FRM is frs1D & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x22 & op2024=0x4
+:fround.h frd,frs1S,FRM is frs1S & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x22 & op2024=0x4
 {
-    local tmp:4 = float2float(frs1D);
+    local tmp:4 = float2float(frs1S);
     frd = zext(tmp);
 }
 
-:froundnx.h frd,frs1D,FRM is frs1D & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x22 & op2024=0x5
+:froundnx.h frd,frs1S,FRM is frs1S & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x22 & op2024=0x5
 {
     # sets the inexact exception flag if the input differs from the rounded result and is not NaN
-    local tmp:4 = float2float(frs1D);
+    local tmp:4 = float2float(frs1S);
     frd = zext(tmp);
 }
 
+@if (FPSIZE == "128")
 :fround.q frd,frs1D,FRM is frs1D & frd & FRM & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x23 & op2024=0x4
 {
     local tmp:4 = float2float(frs1D);
@@ -869,13 +876,16 @@ define pcodeop fmax_m;
     local tmp:4 = float2float(frs1D);
     frd = zext(tmp);
 }
+@endif
 
+@if ((FPSIZE == "64") || (FPSIZE == "128"))
 :fcvtmod.w.d rd,frs1D,"rtz" is frs1D & op1214=1 & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & op0707=0x0  & funct7=0x61 & op2024=0x8
 {
     # like FCVT.W.D  but always rounds to zero, the following doesn't do this
     local tmp:$(XLEN) = trunc(frs1D);
     rd = sext(tmp);
 }
+@endif
 
 # like the FLE.* and FLT.* instructions, except that quiet NaN inputs do not cause the invalid operation exception flag to be set
 :fleq.s rd,frs1S,frs2S is frs2S & frs1S & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x4 & funct7=0x50
@@ -888,15 +898,17 @@ define pcodeop fmax_m;
         rd = zext(frs1S f== frs2S);
 }
 
+@if ((FPSIZE == "64") || (FPSIZE == "128"))
 :fleq.d rd,frs1D,frs2D is frs2D & frs1D & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x4 & funct7=0x51
 {
         rd = zext(frs1D f<= frs2D);
 }
 
-:fltq.d rd,frs1S,frs2S is frs2S & frs1S & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x5 & funct7=0x51
+:fltq.d rd,frs1D,frs2D is frs2D & frs1D & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x5 & funct7=0x51
 {
-        rd = zext(frs1S f== frs2S);
+        rd = zext(frs1D f== frs2D);
 }
+@endif
 
 :fleq.h rd,frs1S,frs2S is frs2S & frs1S & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x4 & funct7=0x52
 {
@@ -908,12 +920,14 @@ define pcodeop fmax_m;
         rd = zext(frs1S f== frs2S);
 }
 
-:fleq.q rd,frs1S,frs2S is frs2S & frs1S & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x4 & funct7=0x53
+@if (FPSIZE == "128")
+:fleq.q rd,frs1D,frs2D is frs2D & frs1D & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x4 & funct7=0x53
 {
-        rd = zext(frs1S f<= frs2S);
+        rd = zext(frs1D f<= frs2D);
 }
 
-:fltq.q rd,frs1S,frs2S is frs2S & frs1S & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x5 & funct7=0x53
+:fltq.q rd,frs1D,frs2D is frs2D & frs1D & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x5 & funct7=0x53
 {
-        rd = zext(frs1S f== frs2S);
+        rd = zext(frs1D f== frs2D);
 }
+@endif

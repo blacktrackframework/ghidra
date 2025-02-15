@@ -17,7 +17,6 @@
 # NaNboxed to fill the register
 frs1H: fr1519 is fr1519 { local tmp = fr1519:$(HFLEN); export tmp; }
 frs2H: fr2024 is fr2024 { local tmp = fr2024:$(HFLEN); export tmp; }
-frs3H: fr2731 is fr2731 { local tmp = fr2731:$(HFLEN); export tmp; }
 
 macro nanboxH(dest, src){
 @if EMULATION
