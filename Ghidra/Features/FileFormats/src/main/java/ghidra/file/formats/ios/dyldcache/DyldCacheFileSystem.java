@@ -18,8 +18,7 @@ package ghidra.file.formats.ios.dyldcache;
 import static ghidra.formats.gfilesystem.fileinfo.FileAttributeType.*;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import com.google.common.collect.*;
 
@@ -52,7 +51,7 @@ public class DyldCacheFileSystem extends AbstractFileSystem<DyldCacheEntry> {
 	private ByteProvider provider;
 	private SplitDyldCache splitDyldCache;
 	private boolean parsedLocalSymbols = false;
-	private Map<DyldCacheSlideInfoCommon, List<DyldFixup>> slideFixupMap;
+	private Map<DyldCacheMappingInfo, Map<Long, DyldFixup>> slideFixupMap;
 	private RangeMap<Long, DyldCacheEntry> rangeMap = TreeRangeMap.create();
 
 	/**
@@ -77,7 +76,7 @@ public class DyldCacheFileSystem extends AbstractFileSystem<DyldCacheEntry> {
 	public void mount(TaskMonitor monitor) throws IOException, MachException, CancelledException {
 		splitDyldCache = new SplitDyldCache(provider, false, new MessageLog(), monitor);
 		RangeSet<Long> allDylibRanges = TreeRangeSet.create();
-		
+
 		// Find the DYLIB's and add them as files
 		monitor.initialize(splitDyldCache.size(), "Find DYLD DYLIBs...");
 		for (int i = 0; i < splitDyldCache.size(); i++) {
@@ -94,11 +93,10 @@ public class DyldCacheFileSystem extends AbstractFileSystem<DyldCacheEntry> {
 					rangeSet.add(range);
 				}
 				DyldCacheEntry entry =
-					new DyldCacheEntry(mappedImage.getPath(), i, rangeSet, null, -1);
+					new DyldCacheEntry(mappedImage.getPath(), i, rangeSet, null, null, -1);
 				rangeSet.asRanges().forEach(r -> rangeMap.put(r, entry));
 				allDylibRanges.addAll(rangeSet);
-				fsIndex.storeFile(mappedImage.getPath(), fsIndex.getFileCount(), false, -1,
-					entry);
+				fsIndex.storeFile(mappedImage.getPath(), fsIndex.getFileCount(), false, -1, entry);
 			}
 		}
 
@@ -110,18 +108,24 @@ public class DyldCacheFileSystem extends AbstractFileSystem<DyldCacheEntry> {
 			monitor.increment();
 			DyldCacheHeader header = splitDyldCache.getDyldCacheHeader(i);
 			String name = splitDyldCache.getName(i);
-			List<DyldCacheMappingAndSlideInfo> mappingInfos = header.getCacheMappingAndSlideInfos();
+			List<DyldCacheMappingInfo> mappingInfos = header.getMappingInfos();
+			List<DyldCacheMappingAndSlideInfo> mappingAndSlideInfos =
+				header.getCacheMappingAndSlideInfos();
 			for (int j = 0; j < mappingInfos.size(); j++) {
-				DyldCacheMappingAndSlideInfo mappingInfo = mappingInfos.get(j);
+				DyldCacheMappingInfo mappingInfo = mappingInfos.get(j);
+				DyldCacheMappingAndSlideInfo mappingAndSlideInfo =
+					!mappingAndSlideInfos.isEmpty() ? mappingAndSlideInfos.get(j) : null;
 				Range<Long> mappingRange = Range.openClosed(mappingInfo.getAddress(),
 					mappingInfo.getAddress() + mappingInfo.getSize());
 				RangeSet<Long> reducedRangeSet = TreeRangeSet.create();
 				reducedRangeSet.add(mappingRange);
 				reducedRangeSet.removeAll(allDylibRanges);
 				for (Range<Long> range : reducedRangeSet.asRanges()) {
-					String path = getComponentPath(name, mappingInfo, j, range);
+					String path =
+						getComponentPath(name, mappingInfo, mappingAndSlideInfo, j, range);
 					DyldCacheEntry entry = new DyldCacheEntry(path, i,
-						TreeRangeSet.create(CollectionUtils.asIterable(range)), mappingInfo, j);
+						TreeRangeSet.create(CollectionUtils.asIterable(range)), mappingInfo,
+						mappingAndSlideInfo, j);
 					rangeMap.put(range, entry);
 					fsIndex.storeFile(path, fsIndex.getFileCount(), false, -1, entry);
 				}
@@ -152,11 +156,11 @@ public class DyldCacheFileSystem extends AbstractFileSystem<DyldCacheEntry> {
 		try {
 			if (entry.mappingInfo() != null) {
 				return DyldCacheExtractor.extractMapping(entry,
-					getComponentName(entry.mappingInfo()), splitDyldCache,
-					entry.splitCacheIndex(), slideFixupMap, file.getFSRL(), monitor);
+					getComponentName(entry.mappingAndSlideInfo()), splitDyldCache, slideFixupMap,
+					file.getFSRL(), monitor);
 			}
-			return DyldCacheExtractor.extractDylib(entry, splitDyldCache, entry.splitCacheIndex(),
-				slideFixupMap, file.getFSRL(), monitor);
+			return DyldCacheExtractor.extractDylib(entry, splitDyldCache, slideFixupMap,
+				file.getFSRL(), monitor);
 		}
 		catch (MachException e) {
 			throw new IOException("Invalid Mach-O header detected at: " + entry);
@@ -174,6 +178,23 @@ public class DyldCacheFileSystem extends AbstractFileSystem<DyldCacheEntry> {
 	public String findAddress(long addr) throws IOException {
 		DyldCacheEntry entry = rangeMap.get(addr);
 		return entry != null ? entry.path() : null;
+	}
+
+	/**
+	 * Gets a {@link List} of {@link GFile files} that have the given mapping flags
+	 * 
+	 * @param flags The desired flags
+	 * @return A {@link List} of {@link GFile files} that have the given mapping flags
+	 */
+	public List<GFile> getFiles(long flags) {
+		List<GFile> files = new ArrayList<>();
+		for (DyldCacheEntry entry : rangeMap.asMapOfRanges().values()) {
+			DyldCacheMappingAndSlideInfo mappingAndSlideInfo = entry.mappingAndSlideInfo();
+			if (mappingAndSlideInfo != null && (flags & mappingAndSlideInfo.getFlags()) != 0) {
+				Optional.ofNullable(lookup(entry.path())).ifPresent(files::add);
+			}
+		}
+		return files;
 	}
 
 	@Override
@@ -213,31 +234,31 @@ public class DyldCacheFileSystem extends AbstractFileSystem<DyldCacheEntry> {
 		rangeMap.clear();
 	}
 
-	private String getComponentName(DyldCacheMappingAndSlideInfo mappingInfo) {
-		String name;
-		if (mappingInfo.isDirtyData()) {
+	private String getComponentName(DyldCacheMappingAndSlideInfo mappingAndSlideInfo) {
+		String name = "DYLD";
+		if (mappingAndSlideInfo == null) {
+			return name;
+		}
+		if (mappingAndSlideInfo.isDirtyData()) {
 			name = "DATA_DIRTY";
 		}
-		else if (mappingInfo.isConstData()) {
-			name = mappingInfo.isAuthData() ? "AUTH_CONST" : "DATA_CONST";
+		else if (mappingAndSlideInfo.isConstData()) {
+			name = mappingAndSlideInfo.isAuthData() ? "AUTH_CONST" : "DATA_CONST";
 		}
-		else if (mappingInfo.isTextStubs()) {
+		else if (mappingAndSlideInfo.isTextStubs()) {
 			name = "TEXT_STUBS";
 		}
-		else if (mappingInfo.isConfigData()) {
+		else if (mappingAndSlideInfo.isConfigData()) {
 			name = "DATA_CONFIG";
 		}
-		else if (mappingInfo.isAuthData()) {
+		else if (mappingAndSlideInfo.isAuthData()) {
 			name = "AUTH";
 		}
-		else if (mappingInfo.isReadOnlyData()) {
+		else if (mappingAndSlideInfo.isReadOnlyData()) {
 			name = "DATA_RO";
 		}
-		else if (mappingInfo.isConstTproData()) {
+		else if (mappingAndSlideInfo.isConstTproData()) {
 			name = "DATA_CONST_TPRO";
-		}
-		else {
-			name = "DYLD";
 		}
 		return name;
 	}
@@ -247,12 +268,14 @@ public class DyldCacheFileSystem extends AbstractFileSystem<DyldCacheEntry> {
 	 * 
 	 * @param dyldCacheName The name of the DYLD Cache
 	 * @param mappingInfo the mapping info
+	 * @param mappingAndSlideInfo the mapping and slide info (could be null)
 	 * @param mappingIndex The mapping index
 	 * @return The DYLD component path of the given DYLD component
 	 */
-	private String getComponentPath(String dyldCacheName, DyldCacheMappingAndSlideInfo mappingInfo,
-			int mappingIndex, Range<Long> range) {
-		return "/DYLD/%s/%s.%d.0x%x-0x%x".formatted(dyldCacheName, getComponentName(mappingInfo),
-			mappingIndex, range.lowerEndpoint(), range.upperEndpoint());
+	private String getComponentPath(String dyldCacheName, DyldCacheMappingInfo mappingInfo,
+			DyldCacheMappingAndSlideInfo mappingAndSlideInfo, int mappingIndex, Range<Long> range) {
+		return "/DYLD/%s/%s.%d.0x%x-0x%x".formatted(dyldCacheName,
+			getComponentName(mappingAndSlideInfo), mappingIndex, range.lowerEndpoint(),
+			range.upperEndpoint());
 	}
 }
