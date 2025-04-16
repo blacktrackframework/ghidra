@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+
+#export DH_VERBOSE = 1
+
+GRADLE_VERSION=8.13
+export GRADLE_USER_HOME=$(CURDIR)/debian/gradlehome
+
+%:
+	dh $@
+
+
+override_dh_auto_build:
+	mkdir -pv $(CURDIR)/debian/gradlehome/.gradle
+	mkdir -pv $(CURDIR)/debian/gradlebin/
+	wget https://service.gradle.org/distributions/gradle-$(GRADLE_VERSION)-bin.zip -o $(CURDIR)/debian/gradlebin/gradle-$(GRADLE_VERSION)-bin.zip
+	unzip $(CURDIR)/debian/gradlebin/gradle-$(GRADLE_VERSION)-bin.zip -d $(CURDIR)/debian/gradlebin
+
+	$(CURDIR)/debian/gradlebin/gradle-$(GRADLE_VERSION)/bin/gradle -I gradle/support/fetchDependencies.gradle
+	$(CURDIR)/debian/gradlebin/gradle-$(GRADLE_VERSION)/bin/gradle buildGhidra
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rfv $(CURDIR)/debian/gradlebin
+	rm -rfv $(CURDIR)/debian/gradlehome
+
+override_dh_install:
+	dh_install
+	unzip $(CURDIR)/build/dist/ghidra*.zip -d $(CURDIR)/ghidraOut/
+	mv $(CURDIR)/ghidraOut/ghidra* ghidra
+	
+	mkdir -pv $(CURDIR)/debian/ghidra/usr/share/
+	mv $(CURDIR)/ghidraOut/ghidra $(CURDIR)/debian/ghidra/usr/share/
+
+	# Did peoples really need this
+	rm -rf $(CURDIR)/debian/ghidra/usr/share/ghidra/docs
+	rm -rf $(CURDIR)/ghidraOut
+	rm -rf $(CURDIR)/build

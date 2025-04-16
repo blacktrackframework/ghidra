@@ -1,0 +1,5 @@
+ghidra (11.4-1) UNRELEASED; urgency=medium
+
+  * Initial release. (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+
+ -- Joe <joe@rstrike.my.id>  Wed, 16 Apr 2025 22:16:52 +0000
