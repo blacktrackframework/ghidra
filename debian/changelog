@@ -1,5 +1,12 @@
 ghidra (11.4-1) UNRELEASED; urgency=medium
 
+  * Change Target Dir. /usr/local/Library/* make sure /usr/share/ still clean.
+  * Fix execution missing.
+
+ -- Joe <joe@rstrike.my.id>  Sat, 26 Apr 2025 23:13:00 +0000
+
+ghidra (11.4-1) UNRELEASED; urgency=medium
+
   * Initial release. (Closes: #nnnn)  <nnnn is the bug number of your ITP>
 
  -- Joe <joe@rstrike.my.id>  Wed, 16 Apr 2025 22:16:52 +0000
